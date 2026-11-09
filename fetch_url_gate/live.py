@@ -63,6 +63,15 @@ def reaches_curl(url: str, timeout: float = 2.0) -> bool:
     return done.returncode == 0 and done.stdout == MARKER
 
 
+def curl_version() -> str:
+    try:
+        done = subprocess.run(["curl", "--version"], capture_output=True, timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return "not installed"
+    lines = done.stdout.decode("ascii", "replace").splitlines()
+    return lines[0] if lines else "unknown"
+
+
 def clients() -> dict:
     found = {"urllib": reaches_urllib}
     if shutil.which("curl"):

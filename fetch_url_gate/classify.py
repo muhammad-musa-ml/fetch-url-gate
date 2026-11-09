@@ -147,7 +147,10 @@ def _check_name(name: str, resolver: Resolver | None, allow_single_label: bool) 
     if "." not in bare and not allow_single_label:
         return _deny("single-label name", name)
     if resolver is not None:
-        addresses = list(resolver(bare))
+        try:
+            addresses = list(resolver(bare))
+        except Exception as exc:  # a resolver is caller code; any failure means deny
+            return _deny(f"resolver failed: {exc.__class__.__name__}", name)
         if not addresses:
             return _deny("name does not resolve", name)
         for text in addresses:
@@ -173,7 +176,9 @@ def check_url(
     resolver: Resolver | None = None,
     allow_single_label: bool = False,
 ) -> Verdict:
-    """Return a Verdict. Never raises on bad input; unreadable URLs are denied."""
+    """Return a Verdict. Unreadable URLs, non-strings and a failing resolver are denied."""
+    if not isinstance(url, str):
+        return _deny("URL is not a string")
     try:
         scheme, raw_host, port, remainder = _split(url)
         host = parse_host(raw_host, strict=True)

@@ -145,7 +145,14 @@ def hostile_cases(port: int) -> list[Case]:
         "data:text/html,x",
     ]:
         cases.append(Case("other-scheme", "scheme", url, False))
-    return cases
+    # Two spellings of 0.0.0.0 are the same string; count each URL once.
+    seen: set[str] = set()
+    unique = []
+    for case in cases:
+        if case.url not in seen:
+            seen.add(case.url)
+            unique.append(case)
+    return unique
 
 
 def benign_cases() -> list[Case]:

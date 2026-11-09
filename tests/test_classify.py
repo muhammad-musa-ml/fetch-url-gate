@@ -150,6 +150,16 @@ def test_resolver_decides_for_domain_names():
     assert check_url("https://rebind.example/").allow
 
 
+def test_a_failing_resolver_and_a_non_string_are_denied():
+    def broken(name):
+        raise RuntimeError("no network")
+
+    verdict = check_url("https://example.com/", resolver=broken)
+    assert not verdict.allow and "resolver failed" in verdict.reason
+    for value in (None, 7, b"http://example.com/", ["http://example.com/"]):
+        assert not check_url(value).allow
+
+
 def test_check_url_never_raises_on_random_text():
     rng = random.Random(20261109)
     alphabet = list("abcxyz019:/\\@[]?#%.-_ \t\n") + ["。", "０", "é", "\x00", "\u200b", "0x", "http", "://", "::1"]

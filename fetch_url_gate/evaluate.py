@@ -10,7 +10,7 @@ from pathlib import Path
 from .baseline import text_rule_allows
 from .classify import check_url
 from .corpus import Case, benign_cases, hostile_cases, resolver
-from .live import LocalServer, clients
+from .live import LocalServer, clients, curl_version
 
 CLIENT_COLUMNS = ("urllib", "curl")
 
@@ -107,7 +107,9 @@ def summary(results: list[Result], live: bool) -> str:
             "## Live check",
             "",
             "Each URL below points at a server listening on 127.0.0.1 (the host may also be 0.0.0.0 or localhost). "
-            "A request counts as reached when the client gets the server's reply, with proxies off.",
+            "A request counts as reached when the client gets the server's reply, with proxies off. "
+            f"Clients: urllib (Python {platform.python_version()}) and {curl_version()}. "
+            "The port is chosen at random on each run.",
             "",
             _table(
                 ["URLs sent"] + [f"reached by {n}" for n in names]
