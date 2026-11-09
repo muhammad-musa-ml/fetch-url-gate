@@ -2,7 +2,10 @@
 
 The rule is on the address, not on the text: the URL is split the way the
 standard splits it, the host is turned into the address it names, and only
-globally routable addresses pass. Anything that cannot be read is denied.
+globally routable addresses pass. Anything that cannot be read, or that
+clients are known to read in more than one way, is denied.
+
+Hand the fetcher Verdict.fetch_url, not the original string.
 """
 
 from __future__ import annotations
@@ -19,9 +22,24 @@ Resolver = Callable[[str], Iterable[str]]
 ALLOWED_SCHEMES = ("http", "https")
 METADATA = ipaddress.IPv4Address("169.254.169.254")
 _NAT64 = bytes.fromhex("0064ff9b" + "00" * 8)
+# Ranges Python's ipaddress calls global (or only lists in newer releases) but
+# that are internal: IETF protocol assignments (includes the Oracle Cloud
+# metadata address 192.0.0.192) and the Azure host endpoint.
+_EXTRA_DENIED = (
+    ipaddress.IPv4Network("192.0.0.0/24"),
+    ipaddress.IPv4Network("168.63.129.16/32"),
+)
+# Names that are internal by convention or by a default hosts file. The
+# resolver is the real check; this list only covers the text.
+_DENIED_SUFFIXES = (
+    "localhost", "internal", "local", "localdomain", "localdomain4", "localdomain6",
+    "home.arpa", "lan", "intranet", "corp", "home", "private", "svc",
+)
+_DENIED_NAMES = ("metadata", "localhost4", "localhost6", "ip6-localhost", "ip6-loopback")
 _SCHEME = re.compile(r"([A-Za-z][A-Za-z0-9+.\-]*):")
 _STRIP = "".join(chr(c) for c in range(0x21))
 _DROP = dict.fromkeys(map(ord, "\t\n\r"))
+_MAX_PORT_DIGITS = 5
 
 
 @dataclass(frozen=True)
@@ -40,6 +58,10 @@ def _deny(reason: str, host: str | None = None, ip: str | None = None) -> Verdic
 
 
 def _split(url: str) -> tuple[str, str, str, str]:
+    try:
+        url.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise HostError("URL is not valid Unicode") from exc
     text = url.strip(_STRIP).translate(_DROP)
     match = _SCHEME.match(text)
     if not match:
@@ -62,7 +84,7 @@ def _split(url: str) -> tuple[str, str, str, str]:
         port = after[1:]
     else:
         host, _, port = authority.partition(":")
-    if port and not (port.isascii() and port.isdigit() and int(port) <= 65535):
+    if port and not (port.isascii() and port.isdigit() and len(port) <= _MAX_PORT_DIGITS and int(port) <= 65535):
         raise HostError("bad port")
     return scheme, host, port, remainder
 
@@ -89,6 +111,10 @@ def _kind(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
         return "private"
     if ip.is_multicast:
         return "multicast"
+    if any(ip in net for net in _EXTRA_DENIED):
+        return "reserved for internal use"
+    if getattr(ip, "is_site_local", False):
+        return "site-local"
     return "not globally routable"
 
 
@@ -97,17 +123,26 @@ def _check_ip(ip, host: str) -> Verdict | None:
         inner = _embedded_v4(ip)
         if inner is not None:
             ip = inner
-    # is_global alone lets multicast through, so it is checked on its own.
-    if not ip.is_global or ip.is_multicast or ip.is_reserved:
+    # is_global alone lets multicast and site-local through, so they are checked on their own.
+    internal = (
+        not ip.is_global
+        or ip.is_multicast
+        or ip.is_reserved
+        or getattr(ip, "is_site_local", False)
+        or any(ip in net for net in _EXTRA_DENIED)
+    )
+    if internal:
         return _deny(f"{ip} is {_kind(ip)}", host, str(ip))
     return None
 
 
+def _has_suffix(name: str, suffix: str) -> bool:
+    return name == suffix or name.endswith("." + suffix)
+
+
 def _check_name(name: str, resolver: Resolver | None, allow_single_label: bool) -> Verdict | None:
     bare = name.rstrip(".")
-    if bare == "localhost" or bare.endswith(".localhost"):
-        return _deny("localhost name", name)
-    if bare.endswith(".internal") or bare == "metadata":
+    if bare in _DENIED_NAMES or any(_has_suffix(bare, s) for s in _DENIED_SUFFIXES):
         return _deny("internal name", name)
     if "." not in bare and not allow_single_label:
         return _deny("single-label name", name)
@@ -126,6 +161,13 @@ def _check_name(name: str, resolver: Resolver | None, allow_single_label: bool) 
     return None
 
 
+def _rebuild_tail(remainder: str) -> str:
+    # The standard turns "\" into "/" in the path only, not in the query or fragment.
+    cut = next((i for i, ch in enumerate(remainder) if ch in "?#"), len(remainder))
+    tail = remainder[:cut].replace("\\", "/") + remainder[cut:]
+    return "/" + tail if tail == "" or tail[0] in "?#" else tail
+
+
 def check_url(
     url: str,
     resolver: Resolver | None = None,
@@ -134,7 +176,7 @@ def check_url(
     """Return a Verdict. Never raises on bad input; unreadable URLs are denied."""
     try:
         scheme, raw_host, port, remainder = _split(url)
-        host = parse_host(raw_host)
+        host = parse_host(raw_host, strict=True)
     except HostError as exc:
         return _deny(str(exc))
     if isinstance(host, str):
@@ -147,8 +189,5 @@ def check_url(
         ip_text = str(host)
     if blocked is not None:
         return blocked
-    tail = remainder.replace("\\", "/")
-    if tail == "" or tail[0] in "?#":
-        tail = "/" + tail
-    fetch_url = f"{scheme}://{shown}{':' + str(int(port)) if port else ''}{tail}"
+    fetch_url = f"{scheme}://{shown}{':' + str(int(port)) if port else ''}{_rebuild_tail(remainder)}"
     return Verdict(True, "global address" if ip_text else "public name", shown, ip_text, fetch_url)

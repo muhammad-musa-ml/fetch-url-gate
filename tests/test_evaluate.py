@@ -13,11 +13,11 @@ def test_static_run_counts():
     results = run(8080, live=False)
     hostile = [r for r in results if not r.case.expect_allow]
     benign = [r for r in results if r.case.expect_allow]
-    assert (len(hostile), len(benign)) == (162, 24)
+    assert (len(hostile), len(benign)) == (184, 27)
     assert sum(r.gate_allows for r in hostile) == 0
     assert sum(not r.gate_allows for r in benign) == 0
     # The text rule's numbers are pinned: they change only if the corpus or the rule does.
-    assert sum(r.text_allows for r in hostile) == 120
+    assert sum(r.text_allows for r in hostile) == 134
     assert sum(not r.text_allows for r in benign) == 6
 
 
@@ -61,12 +61,12 @@ def test_cli_eval_writes_both_files(tmp_path, capsys):
     out = tmp_path / "res"
     assert cli.main(["eval", "--no-live", "--write", "--out", str(out)]) == 0
     text = (out / "summary.md").read_text(encoding="utf-8")
-    assert "## Hostile URLs (162)" in text and "## Benign URLs (24)" in text
+    assert "## Hostile URLs (184)" in text and "## Benign URLs (27)" in text
     assert "Live check" not in text
     with (out / "results.csv").open(encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    assert len(rows) == 162 + 24
-    assert all(r["gate_allows"] == "False" for r in rows if r["family"] not in ("public-name", "public-address", "risky-text"))
+    assert len(rows) == 184 + 27
+    assert all(r["gate_allows"] == "False" for r in rows if r["family"] not in ("public-name", "public-address", "risky-text", "name-lookalike"))
     capsys.readouterr()
 
 

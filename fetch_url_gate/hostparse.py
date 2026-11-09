@@ -4,6 +4,9 @@ A browser, or any client that hands the host to the OS resolver, reads
 "127.1", "0x7f000001", "2130706433" and "0177.0.0.1" as addresses. This module
 turns every such spelling into the address it names, so a check can look at
 the address and not at the text.
+
+With strict=True the parser also denies hosts that clients are known to read
+in more than one way, rather than picking one reading.
 """
 
 from __future__ import annotations
@@ -22,6 +25,19 @@ _FORBIDDEN = set("\x00\t\n\r #/:<>?@[\\]^|%\x7f") | {chr(c) for c in range(0x20)
 _DEC = re.compile(r"[0-9]+")
 _HEX = re.compile(r"[0-9a-fA-F]+")
 _OCT = re.compile(r"[0-7]+")
+_LEADING_ZERO = re.compile(r"0[0-9]+")
+_PLAIN_NAME = re.compile(r"[a-z0-9_-]+(\.[a-z0-9_-]+)*\.?")
+
+# Code points that UTS46 (what browsers use) deletes from a host and that
+# Python's IDNA2003 codec does not all delete. Left in, "127.0.0.1" plus one of
+# them looks like a public name here and like 127.0.0.1 to a browser.
+_IGNORED = re.compile(
+    "[­͏᠋-᠍᠏​⁠⁤︀-️﻿"
+    "\U0001bca0-\U0001bca3\U000e0100-\U000e01ef]"
+)
+# Spelled differently by the two IDNA processing modes (sharp s, final sigma, ZWNJ, ZWJ).
+_DEVIATION = re.compile("[ßς‌‍]")
+_MAX_HOST = 253
 
 
 def _has_forbidden(text: str) -> bool:
@@ -75,7 +91,18 @@ def parse_ipv4(host: str) -> ipaddress.IPv4Address:
     return ipaddress.IPv4Address(value)
 
 
-def parse_host(raw: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | str:
+def _check_a_labels(ascii_host: str) -> None:
+    for label in ascii_host.split("."):
+        if label.startswith("xn--"):
+            try:
+                decoded = label.encode("ascii").decode("idna")
+            except UnicodeError as exc:
+                raise HostError(f"bad punycode label {label!r}") from exc
+            if decoded.isascii():
+                raise HostError(f"punycode label {label!r} decodes to plain ASCII")
+
+
+def parse_host(raw: str, strict: bool = False) -> ipaddress.IPv4Address | ipaddress.IPv6Address | str:
     """Return the address the host names, or the lower-case ASCII domain."""
     if raw.startswith("["):
         if not raw.endswith("]"):
@@ -93,14 +120,24 @@ def parse_host(raw: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | str:
         raise HostError("percent-encoding is not valid UTF-8") from exc
     if decoded == "":
         raise HostError("empty host")
+    if len(decoded) > _MAX_HOST:
+        raise HostError("host is longer than 253 characters")
     if _has_forbidden(decoded):
         raise HostError("forbidden character in host")
+    decoded = _IGNORED.sub("", decoded)
+    if strict and _DEVIATION.search(decoded):
+        raise HostError("host is spelled differently by the two IDNA processing modes")
     try:
         ascii_host = decoded.encode("idna").decode("ascii").lower()
     except UnicodeError as exc:
         raise HostError(f"host is not valid IDNA: {exc}") from exc
     if ascii_host == "" or _has_forbidden(ascii_host):
         raise HostError("forbidden character in host")
+    _check_a_labels(ascii_host)
     if _ends_in_number(ascii_host):
+        if strict and any(_LEADING_ZERO.fullmatch(p) for p in ascii_host.split(".")):
+            raise HostError("leading zeros are read as octal by some clients and as decimal by others")
         return parse_ipv4(ascii_host)
+    if strict and not _PLAIN_NAME.fullmatch(ascii_host):
+        raise HostError("host is not a plain name")
     return ascii_host

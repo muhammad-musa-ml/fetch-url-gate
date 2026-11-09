@@ -70,7 +70,9 @@ def test_text_rule_blocks_innocent_urls_the_gate_allows():
 
 
 def test_corpus_size_is_pinned():
-    # 4 targets x (21 spellings + 12 URL shapes), 5 IPv6 literals, 5 localhost
-    # names, 3 internal names, 3 single-label names, 7 DNS names, 7 other schemes.
-    assert len(hostile_cases(PORT)) == 4 * (21 + 12) + 5 + 5 + 3 + 3 + 7 + 7
-    assert len(benign_cases()) == 24
+    # 4 targets x (21 spellings + 12 URL shapes), 5 IPv6 literals, 8 ignored
+    # code points, 6 reserved suffixes, 3 special addresses, 2 curl globs, 3
+    # leading-zero hosts, 5 localhost names, 3 internal names, 3 single-label
+    # names, 7 DNS names, 7 other schemes.
+    assert len(hostile_cases(PORT)) == 4 * (21 + 12) + 5 + 8 + 6 + 3 + 2 + 3 + 5 + 3 + 3 + 7 + 7
+    assert len(benign_cases()) == 27

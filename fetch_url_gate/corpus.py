@@ -114,6 +114,19 @@ def hostile_cases(port: int) -> list[Case]:
     ]
     for target, group, host in extra_hosts:
         cases.append(Case(group, target, f"http://{host}:{port}/", False))
+    # Code points a browser deletes from a host but Python's IDNA codec keeps.
+    for target, ip in TARGETS.items():
+        for ch in (chr(0xE0100), "⁤"):
+            cases.append(Case("idna-ignored", target, f"http://{ip}{ch}:{port}/", False))
+    for name in ["foo.local", "localhost4.localdomain4", "router.home.arpa", "printer.lan", "kubernetes.default.svc", "x.corp"]:
+        cases.append(Case("reserved-suffix", "private", f"http://{name}:{port}/", False))
+    for host in ["[fec0::1]", "168.63.129.16", "192.0.0.192"]:
+        cases.append(Case("special-address", "private", f"http://{host}:{port}/", False))
+    # curl expands braces in a host unless globbing is off, so one URL can mean several.
+    for host in ["{example.com,localhost}", "{127.0.0.1,example.com}"]:
+        cases.append(Case("curl-glob", "glob", f"http://{host}:{port}/", False))
+    for host in ["010.0.0.5", "0127.0.0.1", "172.016.0.1"]:
+        cases.append(Case("leading-zero", "private", f"http://{host}:{port}/", False))
     for name in ["localhost", "LOCALHOST", "localhost.", "app.localhost", "x.y.localhost"]:
         cases.append(Case("localhost-name", "loopback", f"http://{name}:{port}/", False))
     for name in ["metadata.google.internal", "ip-10-0-0-5.ec2.internal", "metadata"]:
@@ -161,5 +174,8 @@ def benign_cases() -> list[Case]:
         ("risky-text", "https://127.0.0.1.example.com/"),
         ("risky-text", "https://localhost.example.com/"),
         ("risky-text", "https://notlocalhost.example.org/"),
+        ("name-lookalike", "https://www.local-news.example.com/"),
+        ("name-lookalike", "https://corporate.example.org/"),
+        ("name-lookalike", "https://my_host.example.com/"),
     ]
     return [Case(group, "public", url, True) for group, url in urls]

@@ -31,7 +31,6 @@ def test_public_urls_are_allowed(url):
         ("http://127.1/", "loopback"),
         ("http://2130706433/", "loopback"),
         ("http://0x7f000001/", "loopback"),
-        ("http://0177.0.0.1/", "loopback"),
         ("http://[::1]/", "loopback"),
         ("http://[::ffff:127.0.0.1]/", "loopback"),
         ("http://[::ffff:7f00:1]/", "loopback"),
@@ -125,8 +124,8 @@ def test_localhost_and_internal_names():
 
 
 def test_single_label_names_are_denied_unless_allowed():
-    assert not check_url("http://intranet/").allow
-    assert check_url("http://intranet/", allow_single_label=True).allow
+    assert not check_url("http://printer/").allow
+    assert check_url("http://printer/", allow_single_label=True).allow
 
 
 def test_resolver_decides_for_domain_names():
