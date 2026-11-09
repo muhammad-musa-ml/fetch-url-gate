@@ -1,4 +1,4 @@
-"""Cases found by an independent review of the first version.
+"""Cases found by a review of the first version.
 
 Each one was an input the gate allowed (or crashed on) before the fix.
 """
