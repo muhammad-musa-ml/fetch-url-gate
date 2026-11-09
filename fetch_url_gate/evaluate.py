@@ -110,14 +110,16 @@ def summary(results: list[Result], live: bool) -> str:
             "A request counts as reached when the client gets the server's reply, with proxies off.",
             "",
             _table(
-                ["clients", "URLs sent", "reached by any client", "of those, allowed by text rule", "of those, allowed by gate"],
-                [(", ".join(names), len(sent), len(reached), sum(r.text_allows for r in reached), sum(r.gate_allows for r in reached))],
+                ["URLs sent"] + [f"reached by {n}" for n in names]
+                + ["reached by either", "of those, allowed by text rule", "of those, allowed by gate"],
+                [[len(sent)] + [sum(r.reached[n] for r in sent) for n in names]
+                 + [len(reached), sum(r.text_allows for r in reached), sum(r.gate_allows for r in reached)]],
             ),
             "",
             "Reached, by family:",
             "",
             _table(
-                ["family", "sent"] + names + ["any"],
+                ["family", "sent"] + names + ["either"],
                 [
                     [g, sum(r.case.group == g for r in sent)]
                     + [sum(r.case.group == g and r.reached[n] for r in sent) for n in names]
@@ -126,7 +128,7 @@ def summary(results: list[Result], live: bool) -> str:
                 ],
             ),
             "",
-            "Reached by any client but allowed by the text rule:",
+            "Reached by either client but allowed by the text rule:",
             "",
         ] + [f"- `{ascii(r.case.url)}`" for r in reached if r.text_allows]
     return "\n".join(out) + "\n"
