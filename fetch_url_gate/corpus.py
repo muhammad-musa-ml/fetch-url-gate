@@ -2,8 +2,8 @@
 
 Hostile means: the URL reaches a loopback, metadata, private or unspecified
 address, or a scheme that is not http(s), by a route that a fetcher may follow.
-Every hostile case is built from a rule, not copied from a list, so the counts
-in the results come from this file.
+Most hostile cases are built from rules and the rest are listed here by hand,
+so the counts in the results come from this file.
 """
 
 from __future__ import annotations
